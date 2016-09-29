@@ -2,7 +2,7 @@ library(RCurl)
 library(XML)
 library(httr)
 
-api_key<-"your_api_key_here"
+api_key<-"your_api_key_here"      #API key and secret must be obtained from https://www.flickr.com/services/api/misc.api_keys.html
 
 secret<- "your_secret_here"
 
@@ -18,12 +18,12 @@ ep<-oauth_endpoint(request="https://www.flickr.com/services/oauth/request_token"
 
 sig<-oauth1.0_token(ep,myapp,cache=F)                                             #creates variable with authentication credentials
 
-fl_sig <- sign_oauth1.0(myapp,sig)
+fl_sig <- sign_oauth1.0(myapp,sig)                                                #authenticate
 
 baseURL <- paste("https://api.flickr.com/services/rest/?method=flickr.photos.search&api_key=",api_key,sep="")   #set base URL
 
 
-pics<-NULL                              #creates empty object
+pics<-NULL                              #creates empty object to store the data
 year<-seq(2005,2014,1)                  #creates variable "year" so that query returns pictures taken between 2005 and 2014
 text<-"bird"                            #set keywords so that query returns pictures with the text "bird"
 woeid<-"12578048"                       #only return pictures taken in Scotland
@@ -32,6 +32,7 @@ extras<-"date_taken,geo,tags"           #extra information to download
 perpage<-"250"                          #number of results to return per page
 format<-"rest"                          #format of results
 
+#API only returns 400 results per query so it is neccessary to loop through months to obtain all the results
 
  for (y in 1:length(year)){                     #creates object dates
       for (m in 1:12){ daymin<-"01"
@@ -64,7 +65,7 @@ format<-"rest"                          #format of results
            getPhotos_data <- xmlRoot(xmlTreeParse(getURL                                    #parse URL and extract root node
                              (getPhotos,ssl.verifypeer=FALSE, useragent = "flickr") ))
 
-
+           #results are returned in different pages so it is necessary to loop through pages to collect all the data
            #parse the total number of pages
            pages_data <- data.frame(xmlAttrs(getPhotos_data[["photos"]]))
            pages_data[] <- lapply(pages_data, as.character)
@@ -104,4 +105,84 @@ format<-"rest"                          #format of results
 
                   pics<-rbind(pics,pics_tmp)
 }}
+
+
+################################
+####Data formatting
+################################
+
+#####Date#####
+
+library(lubridate)
+
+pics$month<-month(ymd_hms(pics$datetaken),label=T)   #create variable month
+
+pics$year<-year(ymd_hms(pics$datetaken))             #create variable year
+
+####Coordinates####
+
+options(digits=9)
+
+pics$latitude<-as.numeric(pics$latitude)              #set latitude as numeric
+
+pics$longitude<-as.numeric(pics$longitude)            #set longitude as numeric
+
+####################################
+##########Save dataset
+####################################
+
+library(stringr)
+
+pics$datetaken<- str_replace_all(pics$datetaken, " ","_")     #substitute white spaces with "_"
+pics$tags<- str_replace_all(pics$tags, "[[:punct:]]","_")     #substitute puctuation with "_"
+pics$tags<- str_replace_all(pics$tags, " ","_")               #substitute white spaces with "_"
+
+pics<-pics[-which(pics$latitude==0),]                         #delete data with latitude recorded as 0
+
+
+write.table(pics,"pics_final.txt", row.names=F,sep="\t", quote=F) #save dataset
+
+##############################################################
+###Remove duplicates
+##############################################################
+birdwatch<-read.table("pics_final.txt",header=T)
+
+birdwatch$id<-as.character(dolphin$id)                  #set photo id as a character string
+birdwatch$owner<-as.character(dolphin$owner)            #set photohrapher id as a character string
+birdwatch$datetaken<-as.character(dolphin$datetaken)    #set date as a character string
+birdwatch$tags<-as.character(dolphin$tags)              #set tags as a character string
+birdwatch$year<-as.factor(dolphin$year)                 #set year as a factor
+
+print(levels(birdwatch$month))
+birdwatch$month<- factor(birdwatch$month,levels(birdwatch$month)      #reset order of month factor levels
+                  [c(5,4,8,1,9,7,6,2,12,11,10,3)])
+
+birdwatch$dateonly<-sapply(strsplit(birdwatch$datetaken, "_"), "[[", 1)   #divide date from time
+birdwatch$dateonly<-as.character(birdwatch$dateonly)                      #and set as character string
+
+d<-duplicated(birdwatch[,c(2,10)])                        #find multiple pictures from the same photographer in the same day
+
+birdwatch_VD<-birdwatch[-which(d=="TRUE"),]                 #eliminate duplicates
+
+
+##################################################
+############Filtering by regular expressions
+##################################################
+library(stringr)
+
+birdwatch_VD$tags<- str_replace_all(birdwatch_VD$tags, "_"," ")
+
+
+birdwatchmined1<-birdwatch_VD[-grep("zoo[[:>:]]",birdwatch_VD$tags,value=FALSE,perl=TRUE),]
+
+birdwatchmined2<-birdwatchmined1[-grep("aircraft",birdwatchmined1$tags,value=FALSE,perl=TRUE),]
+
+birdwatchmined3<-birdwatchmined2[-grep("[[:<:]]statue|[[:<:]]sculpture|museum[[:>:]]|craft",birdwatchmined2$tags,value=FALSE,perl=TRUE),]
+
+birdwatchmined3$tags<- str_replace_all(birdwatchmined3$tags, " ","_")
+
+
+write.table(birdwatchmined3,"birdwatchingmined.txt", row.names=F,sep="\t", quote=F)
+
+
 
