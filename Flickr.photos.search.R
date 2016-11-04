@@ -1,3 +1,10 @@
+#####################################################
+# R code to query Flickr API and build a dataframe
+# created by Francesca Mancini
+# adapted from Mauricion Alarcon https://rpubs.com/rmalarc/74406
+# last modified 04/11/2016
+#####################################################
+
 library(RCurl)
 library(XML)
 library(httr)
